@@ -70,15 +70,13 @@ if __name__ == '__main__':
             f.writelines(str(unit_content))
 
     # converting content into word.docx file
-    pypandoc.convert(
-        source=in_file, 
+    pypandoc.convert_file(
+        source_file=in_file, 
         format='html', 
         to='docx', \
         outputfile=out_file, 
         extra_args=["+RTS", "-K64m", "-RTS"]
     )
 
+    # remove temp file
     os.remove(in_file)
-
-
-
