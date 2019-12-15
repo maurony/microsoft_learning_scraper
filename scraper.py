@@ -3,6 +3,7 @@ import argparse
 import requests
 import os
 import pypandoc
+import json
 from bs4 import BeautifulSoup
 
 # ------------------------------------------------------------------------
@@ -17,9 +18,13 @@ args = parser.parse_args()
 if __name__ == '__main__':
     # course
     course_name = str(args.course)
+    
+    # create file name
+    file_name = course_name.replace('-', '_')
 
     # specify the url
-    root_page = "https://docs.microsoft.com/en-us/learn/modules" + "/" + course_name
+    module_root = "https://docs.microsoft.com/en-us/learn/"
+    root_page = "https://docs.microsoft.com/en-us/learn/paths/" + course_name
 
     # query the website and return the html to the variable ‘page’
     response = requests.get(root_page)
@@ -28,18 +33,41 @@ if __name__ == '__main__':
     content = BeautifulSoup(response.text, 'html.parser')
 
     # get content list
-    course_unit_list = content.find_all('a', {'class':'unit-title'})
+    modules_unit_list = content.find_all('a', {'class':'is-block is-undecorated'})
 
     # get all sublinks
-    units = []
-    for unit in course_unit_list:
-        units.append(unit['href'])
+    modules = dict()
+
+    for index, module in enumerate(modules_unit_list):
+        # create new dict
+        module_dict = dict()
+        # get title and url of current mocule
+        module_dict['title'] = module.findChildren('h3')[0].contents[0]
+        module_dict['url'] = module_root + module['href'][6:-5]
+        # get content of module
+        module_response = requests.get(module_dict['url'])
+        # get content
+        module_content = BeautifulSoup(module_response.text, 'html.parser')
+        # module unit list
+        module_dict['units'] = [unit['href'] for unit in module_content.find_all('a', {'class':'unit-title'})]
+        # add to module
+        modules[index] = module_dict
+    
+    config_file = os.path.join('./config', file_name + '.json')
+    if not os.path.exists('./config/'):
+        os.makedirs('./config/')
+    elif os.path.exists(config_file):
+        os.remove(config_file) 
+    
+    # write config file to json file
+    with open(config_file, 'w') as c:
+        json.dump(modules, c, indent=1)
 
     # -----------------------------------------------------------------------
     # get content of entire course
     # create data dir if not exists
     in_file = './data/tmp.html'
-    out_file = os.path.join('./data', course_name.replace('-', '_') + '.docx')
+    out_file = os.path.join('./data', file_name + '.docx')
 
     # remove in_file if exists
     if os.path.exists(out_file):
@@ -55,19 +83,23 @@ if __name__ == '__main__':
     # parse the html using beautiful soup and store in variable `soup`
     with(open(in_file, "a", encoding='utf-8')) as f:
         # iterate over units
-        for unit in units:
-            # get url
-            unit_url = os.path.join(root_page + "/" + unit)
-            # logging
-            print('Processing unit: ' + unit_url)
-            # query the website and return the html to the variable ‘page’
-            response = requests.get(unit_url)
-            # parse site
-            content = BeautifulSoup(response.text, 'html.parser')
-            # select relevant elements
-            unit_content = content.find_all('div', {'class':'section is-uniform is-relative'})
-            # write to file 
-            f.writelines(str(unit_content))
+        for key, module in modules.items():
+            print(module['title'] + '-------------------------------')
+            f.writelines('<h1>' + module['title'] + '</h1>')
+            # iterate over untils
+            for unit in module['units']:
+                # get url
+                unit_url = os.path.join(module['url'] + unit)
+                # logging
+                print('Processing unit: ' + unit_url)
+                # query the website and return the html to the variable ‘page’
+                response = requests.get(unit_url)
+                # parse site
+                content = BeautifulSoup(response.text, 'html.parser')
+                # select relevant elements
+                unit_content = content.find_all('div', {'class':'section is-uniform is-relative'})
+                # write to file 
+                f.writelines(str(unit_content))
 
     # converting content into word.docx file
     pypandoc.convert_file(
